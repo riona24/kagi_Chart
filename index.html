@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>日経225先物 手動入力カギ足システム</title>
+
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
+<!-- PWA / Mobile meta -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<style>
+/* ───── デザイン（ベース） ───── */
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:'Segoe UI',Tahoma,sans-serif;
+  background:linear-gradient(135deg,#1e3c72,#2a5298);
+  /* モバイルのアドレスバー高さ変動に強い */
+  min-height:100dvh;
+  padding:20px;
+  /* iOSノッチ対応 */
+  padding-bottom:calc(20px + env(safe-area-inset-bottom));
+}
+.container{max-width:1600px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 20px 40px rgba(0,0,0,.1);overflow:hidden;}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:30px;text-align:center;}
+.header h1{font-size:2.4em;font-weight:300;margin-bottom:10px;}
+.status-indicator{display:inline-flex;align-items:center;gap:8px;font-size:1.1em;margin-top:10px;}
+.status-dot{width:12px;height:12px;border-radius:50%;background:#f39c12;animation:pulse 2s infinite;}
+@keyframes pulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}
+.main-grid{display:grid;grid-template-columns:350px 1fr;min-height:calc(100vh - 200px);}
+.control-panel{background:#f8f9fa;padding:25px;border-right:1px solid #e9ecef;overflow-y:auto;}
+.chart-area{padding:25px;display:flex;flex-direction:column;}
+.section-title{font-size:1.2em;font-weight:700;color:#2c3e50;margin-bottom:20px;padding-bottom:10px;border-bottom:3px solid #3498db;}
+.control-group{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 4px 6px rgba(0,0,0,.05);}
+.control-group h3{margin-bottom:15px;color:#34495e;font-size:1em;}
+.input-group{margin-bottom:15px;}
+.input-group label{display:block;margin-bottom:8px;font-weight:500;color:#2c3e50;font-size:.9em;}
+.form-control{width:100%;padding:12px;border:2px solid #e1e8ed;border-radius:8px;font-size:1em;transition:.3s;}
+.form-control:focus{outline:none;border-color:#3498db;box-shadow:0 0 0 3px rgba(52,152,219,.1);}
+.price-input-row{display:flex;gap:10px;align-items:end;}
+.price-input-row .form-control{flex:1;}
+.btn{padding:12px 20px;border:none;border-radius:8px;font-size:1em;font-weight:600;cursor:pointer;transition:.3s;width:100%;margin-bottom:10px;}
+.btn-small{padding:8px 12px;font-size:.9em;width:auto;margin-bottom:0;min-width:80px;}
+.btn-primary{background:linear-gradient(135deg,#3498db,#2980b9);color:#fff;}
+.btn-primary:hover{background:linear-gradient(135deg,#2980b9,#1f639a);transform:translateY(-2px);box-shadow:0 4px 12px rgba(52,152,219,.3);}
+.btn-success{background:linear-gradient(135deg,#27ae60,#229954);color:#fff;}
+.btn-success:hover{background:linear-gradient(135deg,#229954,#1e8449);transform:translateY(-2px);}
+.btn-danger{background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;}
+.btn-danger:hover{background:linear-gradient(135deg,#c0392b,#a93226);transform:translateY(-2px);}
+.btn-secondary{background:linear-gradient(135deg,#95a5a6,#7f8c8d);color:#fff;}
+.btn-warning{background:linear-gradient(135deg,#f39c12,#e67e22);color:#fff;}
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
+.status-card{background:#fff;padding:15px;border-radius:10px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.1);border-left:4px solid #3498db;}
+.status-value{font-size:1.3em;font-weight:bold;color:#2c3e50;}
+.status-label{font-size:.85em;color:#7f8c8d;margin-top:5px;}
+.chart-container{flex:1;min-height:400px;height:500px;background:#fff;border-radius:15px;padding:20px;box-shadow:0 8px 25px rgba(0,0,0,.1);}
+.data-log{background:#2c3e50;color:#ecf0f1;border-radius:10px;padding:15px;margin-top:20px;font-family:'Courier New',monospace;font-size:.9em;max-height:150px;overflow-y:auto;}
+.log-entry{margin-bottom:5px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.1);}
+.timestamp{color:#3498db;font-weight:bold;}
+.price-up{color:#27ae60;} .price-down{color:#e74c3c;}
+.alert{padding:12px;border-radius:8px;margin-bottom:15px;font-size:.9em;}
+.alert-info{background:#d1ecf1;border:1px solid #bee5eb;color:#0c5460;}
+.alert-warning{background:#fff3cd;border:1px solid #ffeaa7;color:#856404;}
+.recent-prices{max-height:200px;overflow-y:auto;border:1px solid #e9ecef;border-radius:8px;padding:10px;background:#f8f9fa;}
+.price-entry{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #e9ecef;font-size:.9em;}
+.price-entry:last-child{border-bottom:none;}
+
+/* ===== スクロール制御パネル ===== */
+.chart-controls{display:flex;align-items:center;gap:15px;margin-bottom:15px;padding:12px;background:#f8f9fa;border-radius:8px;}
+.chart-controls label{font-weight:600;color:#2c3e50;white-space:nowrap;}
+.chart-controls input[type="range"]{flex:1;margin:0 10px;}
+.chart-controls .range-info{font-size:0.9em;color:#7f8c8d;white-space:nowrap;min-width:120px;}
+.zoom-buttons{display:flex;gap:5px;}
+.zoom-buttons button{padding:6px 12px;font-size:0.85em;border:1px solid #ddd;background:#fff;border-radius:4px;cursor:pointer;}
+.zoom-buttons button:hover{background:#f0f0f0;}
+
+/* ===== リスト共通（削除UI） ===== */
+.manage-list{list-style:none;padding:0;margin:0;max-height:180px;overflow-y:auto;border:1px solid #e9ecef;border-radius:8px;}
+.manage-item{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #f0f2f5;font-size:.9em;}
+.manage-item:last-child{border-bottom:none;}
+.item-meta{display:flex;flex-direction:column;gap:2px;}
+.item-actions{display:flex;gap:8px;align-items:center;}
+
+@media(max-width:1200px){
+  .main-grid{grid-template-columns:1fr;}
+  .control-panel{border-right:none;border-bottom:1px solid #e9ecef;}
+  .header h1{font-size:1.8em;}
+}
+/* ───── CSS end ───── */
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>📈 日経225先物 手動入力カギ足</h1>
+    <div class="status-indicator"><div class="status-dot"></div><span>手動入力モード</span></div>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- 左パネル -->
+    <div class="control-panel">
+      <div class="section-title">✏️ 手動入力</div>
+
+      <!-- 価格入力 -->
+      <div class="control-group">
+        <h3>価格入力</h3>
+        <div class="input-group">
+          <label>現在価格 (円)</label>
+          <div class="price-input-row">
+            <input type="number" class="form-control" id="priceInput" placeholder="例: 33500" step="1" min="10000" max="50000" inputmode="numeric" pattern="\d*">
+            <button type="button" class="btn btn-success btn-small" id="addPriceBtn">追加</button>
+          </div>
+        </div>
+        <div class="input-group">
+          <label>日時（オプション）</label>
+          <input type="datetime-local" class="form-control" id="datetimeInput">
+        </div>
+      </div>
+
+      <!-- カギ足パラメータ -->
+      <div class="control-group">
+        <h3>カギ足パラメーター</h3>
+        <div class="input-group">
+          <label>転換率 (%)</label>
+          <input type="number" class="form-control" id="reversalPercent" value="0.1" step="0.01" min="0.01" max="10">
+        </div>
+        <button type="button" class="btn btn-warning" id="recalculateBtn">🔄 再計算</button>
+      </div>
+
+      <!-- 売買マーク（追加・管理） -->
+      <div class="control-group">
+        <h3>売買記録</h3>
+        <div class="input-group">
+          <label>取引タイプ</label>
+          <select class="form-control" id="tradeType">
+            <option value="buy">買い (BUY)</option>
+            <option value="sell">売り (SELL)</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary btn-small" id="addTradeBtn">✅ マーク</button>
+          <button type="button" class="btn btn-danger btn-small" id="deleteSelectedTradeBtn">🗑 選択マーク削除</button>
+          <button type="button" class="btn btn-secondary btn-small" id="clearTradesBtn">🧹 全マーク削除</button>
+        </div>
+        <div id="tradeLog" style="font-size:0.9em;margin-top:8px;">—</div>
+        <div id="plTotal" style="margin-top:8px;font-weight:bold;"></div>
+        <div style="margin-top:10px;">
+          <ul id="tradeList" class="manage-list">
+            <li class="manage-item" style="justify-content:center;color:#6c757d;">マークはありません</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- データ管理 -->
+      <div class="control-group">
+        <h3>データ管理</h3>
+        <button type="button" class="btn btn-secondary" id="downloadBtn">💾 データダウンロード</button>
+        <button type="button" class="btn btn-primary" id="sampleBtn">📊 サンプルデータ</button>
+        <button type="button" class="btn btn-danger" id="clearBtn">🗑️ データクリア</button>
+
+        <!-- 保存まわり -->
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-success btn-small" id="saveBtn">📎 ローカル保存</button>
+          <button type="button" class="btn btn-secondary btn-small" id="restoreBtn">↩️ 保存から復元</button>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="autosaveToggle" checked>
+            自動保存（操作ごと）
+          </label>
+        </div>
+      </div>
+
+      <!-- ステータス -->
+      <div class="status-grid">
+        <div class="status-card"><div class="status-value" id="lastUpdate">未入力</div><div class="status-label">最終入力</div></div>
+        <div class="status-card"><div class="status-value" id="dataCount">0</div><div class="status-label">価格データ数</div></div>
+        <div class="status-card"><div class="status-value" id="currentPrice">---</div><div class="status-label">最新価格</div></div>
+        <div class="status-card"><div class="status-value" id="kagiCount">0</div><div class="status-label">カギ線数</div></div>
+      </div>
+
+      <!-- 入力履歴（閲覧＋削除管理） -->
+      <div class="control-group">
+        <h3>入力履歴</h3>
+        <div class="recent-prices" id="recentPrices">
+          <div style="text-align:center;color:#6c757d;padding:20px;">価格データがありません</div>
+        </div>
+        <div style="margin-top:10px;">
+          <ul id="priceList" class="manage-list">
+            <li class="manage-item" style="justify-content:center;color:#6c757d;">履歴がありません</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="alert alert-info"><strong>📌 使用方法:</strong><br>• 転換率 0.1% は約 40 円幅<br>• サンプルデータで動作確認できます</div>
+      <div class="alert alert-warning"><strong>⚡ 注意事項:</strong><br>データはブラウザに一時保存されます。重要なデータはダウンロードしてください</div>
+    </div>
+
+    <!-- 右パネル -->
+    <div class="chart-area">
+      <!-- チャート制御パネル -->
+      <div class="chart-controls">
+        <label>表示範囲:</label>
+        <input type="range" id="chartRange" min="0" max="100" value="100" step="1">
+        <div class="range-info" id="rangeInfo">全データ表示</div>
+        <div class="zoom-buttons">
+          <button type="button" id="zoomOutBtn" title="表示範囲を広げる">ズームアウト</button>
+          <button type="button" id="zoomInBtn" title="表示範囲を狭める">ズームイン</button>
+          <button type="button" id="latestBtn" title="最新データにスクロール">最新</button>
+        </div>
+      </div>
+
+      <div class="chart-container"><canvas id="kagiChart"></canvas></div>
+      <div class="data-log" id="dataLog"><div class="log-entry"><span class="timestamp">システム起動</span> - 日経225先物手動入力システム開始</div></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ===== 共通変数 ===== */
+let chart=null, priceData=[], kagiData=[], trades=[];
+let selectedIdx=null;
+let selectedTradeIdx=null; // ★選択中のトレード（チャートから削除用）
+let viewStart=0, viewEnd=0, maxViewWidth=20; // 表示制御用変数
+const COLOR={buy:'#2ecc71', sell:'#e74c3c', pair:'#7f8c8d55'};
+const SHAPE={buy:'triangle', sell:'rectRot'};
+const STORAGE_KEY = 'kagi_manual_storage_v1';
+
+/* ===== 保存・復元 ===== */
+function saveState(manual=false){
+  try{
+    const state = {
+      savedAt: Date.now(),
+      priceData,
+      trades,
+      reversalPercent: +document.getElementById('reversalPercent').value,
+      maxViewWidth
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if(manual) log('ローカル保存を実行しました');
+  }catch(e){
+    console.error(e);
+    alert('保存に失敗しました（容量/権限の可能性）');
+  }
+}
+function restoreState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw){ alert('保存データがありません'); return; }
+    const s = JSON.parse(raw);
+    priceData     = Array.isArray(s.priceData) ? s.priceData : [];
+    trades        = Array.isArray(s.trades)    ? s.trades    : [];
+    if(typeof s.reversalPercent === 'number'){
+      document.getElementById('reversalPercent').value = s.reversalPercent;
+    }
+    if(typeof s.maxViewWidth === 'number') maxViewWidth = s.maxViewWidth;
+
+    document.getElementById('chartRange').value = 100;
+    selectedIdx = null; selectedTradeIdx=null;
+    drawChart();
+    updatePriceList();
+    updateTradeList();
+    log('保存データを復元しました');
+  }catch(e){
+    console.error(e);
+    alert('復元に失敗しました（データ破損の可能性）');
+  }
+}
+function clearSavedState(){
+  localStorage.removeItem(STORAGE_KEY);
+}
+function maybeAutoSave(){
+  const auto = document.getElementById('autosaveToggle');
+  if(auto && auto.checked) saveState(false);
+}
+
+/* ===== カギ足計算 & パス ===== */
+function calcKagi(list,rev){
+  if(!list.length) return [];
+  const k=[],f=list[0];let last=f.price,trend=1;
+  k.push({x:0,y:last,trend,timestamp:f.timestamp});
+  for(let i=1;i<list.length;i++){
+    const p=list[i].price,diff=p-last,chg=Math.abs(diff/last)*100;
+    if(chg<rev) continue;
+    const nt=diff>0?1:-1;
+    if(nt!==trend){trend=nt;last=p;k.push({x:k.length,y:p,trend,timestamp:list[i].timestamp});}
+    else if((trend===1&&p>last)||(trend===-1&&p<last)){last=p;k.push({x:k.length,y:p,trend,timestamp:list[i].timestamp});}
+  }
+  return k;
+}
+function toPath(d){
+  if(d.length<2) return d;
+  const r=[];let x=0;r.push({...d[0],x});
+  for(let i=1;i<d.length;i++){
+    if(d[i].trend!==d[i-1].trend){x++;r.push({x,y:d[i-1].y,isHorizontal:true,timestamp:d[i].timestamp});}
+    r.push({x,y:d[i].y,trend:d[i].trend,isVertical:true,timestamp:d[i].timestamp});
+  }
+  return r;
+}
+
+/* ===== Chart 初期化 ===== */
+function initChart(){
+  const ctx=document.getElementById('kagiChart').getContext('2d');
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{datasets:[
+      {label:'kagi',data:[],borderWidth:4,borderColor:'#3498db',
+       backgroundColor:'transparent',pointBorderColor:'#2c3e50',pointBorderWidth:2,tension:0},
+      {type:'scatter',label:'trade',data:[],showLine:false,pointRadius:12,pointBorderWidth:3},
+      {type:'line',label:'pair',data:[],showLine:true,fill:false,
+       borderDash:[6,4],borderColor:COLOR.pair,pointRadius:0},
+      {type:'scatter',label:'selected',data:[],showLine:false,
+       pointRadius:12,pointStyle:'circle',pointBackgroundColor:'#f1c40f',
+       pointBorderColor:'#2c3e50',pointBorderWidth:3},
+      // ★選択中トレードのハイライト
+      {type:'scatter',label:'tradeSelected',data:[],showLine:false,
+       pointRadius:14,pointStyle:'circle',pointBackgroundColor:'#f1c40f',
+       pointBorderColor:'#2c3e50',pointBorderWidth:4}
+    ]},
+    options:{
+      responsive:true,
+      interaction:{intersect:false,mode:'nearest'},
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{type:'linear',min:0,max:maxViewWidth},
+        y:{ticks:{callback:v=>'¥'+Math.round(v).toLocaleString()}}
+      }
+    }
+  });
+
+  chart.canvas.addEventListener('click', onChartClick);
+}
+
+/* ===== 表示範囲制御 ===== */
+function updateViewRange(){
+  if(!kagiData.length) return;
+
+  const totalWidth = kagiData.length > 0 ? Math.max(...kagiData.map(p => p.x)) + 1 : 1;
+  const rangeSlider = document.getElementById('chartRange');
+  const rangeValue = parseInt(rangeSlider.value);
+
+  const displayWidth = Math.min(maxViewWidth, totalWidth);
+
+  if(rangeValue === 100) {
+    viewEnd = totalWidth;
+    viewStart = Math.max(0, viewEnd - displayWidth);
+  } else {
+    const maxStart = Math.max(0, totalWidth - displayWidth);
+    viewStart = Math.floor((rangeValue / 100) * maxStart);
+    viewEnd = Math.min(viewStart + displayWidth, totalWidth);
+  }
+
+  chart.options.scales.x.min = viewStart;
+  chart.options.scales.x.max = viewEnd;
+
+  const info = document.getElementById('rangeInfo');
+  if(totalWidth <= maxViewWidth) {
+    info.textContent = '全データ表示';
+    rangeSlider.disabled = true;
+  } else {
+    info.textContent = `${viewStart + 1}-${viewEnd} / ${totalWidth}`;
+    rangeSlider.disabled = false;
+  }
+  rangeSlider.max = 100;
+}
+
+/* ===== ペア線 ===== */
+function updatePairLines(){
+  const seg=[];let open=null;
+  trades.forEach(t=>{
+    if(!open){open=t;return;}
+    if(open.type!==t.type){
+      seg.push({x:open.x,y:open.y},{x:t.x,y:t.y},{x:NaN,y:NaN});
+      open=null;
+    }else{open=t;}
+  });
+  chart.data.datasets[2].data=seg;
+}
+
+/* ===== トレード位置の再割当（価格削除後の保護） ===== */
+function rebindTradesToKagi(){
+  if(!kagiData.length || !trades.length) return;
+  let changes=0;
+  trades.forEach(t=>{
+    let bestIdx=0, bestDist=Infinity;
+    for(let i=0;i<kagiData.length;i++){
+      const dx=kagiData[i].x - t.x, dy=kagiData[i].y - t.y;
+      const dist = dx*dx + dy*dy;
+      if(dist<bestDist){bestDist=dist;bestIdx=i;}
+    }
+    const newX=kagiData[bestIdx].x, newY=kagiData[bestIdx].y;
+    if(newX!==t.x || newY!==t.y){ t.x=newX; t.y=newY; changes++; }
+  });
+  if(changes>0) log(`トレード位置を再割当: ${changes}件`);
+}
+
+/* ===== 描画 ===== */
+function drawChart(){
+  kagiData = toPath( calcKagi(priceData, +document.getElementById('reversalPercent').value) );
+
+  /* kagi 点 */
+  chart.data.datasets[0].data = kagiData.map(p=>({x:p.x,y:p.y}));
+  chart.data.datasets[0].data.forEach((d,i)=>{
+    d.radius      = kagiData[i].isHorizontal ? 7 : 10;
+    d.hitRadius   = 15;
+    d.hoverRadius = d.radius + 3;
+    d.backgroundColor = kagiData[i].isHorizontal ? '#95a5a6'
+                      : kagiData[i].trend===1 ? COLOR.buy : COLOR.sell;
+    d.borderWidth = 2;
+    d.borderColor = '#2c3e50';
+  });
+
+  /* trade マーカー */
+  chart.data.datasets[1].data = trades.map(t=>({x:t.x,y:t.y}));
+  chart.data.datasets[1].pointBackgroundColor = trades.map(t=>COLOR[t.type]);
+  chart.data.datasets[1].pointStyle           = trades.map(t=>SHAPE[t.type]);
+  chart.data.datasets[1].pointBorderColor     = '#2c3e50';
+  chart.data.datasets[1].pointRadius          = 12;
+  chart.data.datasets[1].pointBorderWidth     = 3;
+
+  // ★選択中トレードのハイライト
+  if(selectedTradeIdx!==null && trades[selectedTradeIdx]){
+    const st = trades[selectedTradeIdx];
+    chart.data.datasets[4].data = [{x:st.x, y:st.y}];
+  }else{
+    chart.data.datasets[4].data = [];
+  }
+
+  updatePairLines();
+  updateViewRange();
+  highlightSelected(false);
+  chart.update('active');
+  updateTradeLog();updateStats();updateRecent();
+}
+
+/* ===== 選択ハイライト（カギ点） ===== */
+function highlightSelected(updateChart=true){
+  const ds = chart.data.datasets[3];
+  ds.data = selectedIdx!==null ? [{x:kagiData[selectedIdx].x, y:kagiData[selectedIdx].y}] : [];
+  if(updateChart) chart.update('active');
+}
+
+/* ===== クリック処理 ===== */
+function onChartClick(evt){
+  const els = chart.getElementsAtEventForMode(evt,'nearest',{intersect:false,axis:'xy'},true);
+  if(!els.length) return;
+  const el = els[0];
+  if(el.datasetIndex===0){ // kagi 点
+    selectedIdx = el.index;
+    highlightSelected();
+  }else if(el.datasetIndex===1){ // trade マーカー
+    selectedTradeIdx = el.index;
+    drawChart(); // ハイライト反映
+  }
+}
+
+/* ===== 取引履歴 & 損益 ===== */
+function updateTradeLog(){
+  const box=document.getElementById('tradeLog');
+  if(!trades.length){box.innerHTML='—';document.getElementById('plTotal').textContent='';return;}
+  let html='',plSum=0,open=null;
+  trades.forEach((t,i)=>{
+    const ts=new Date(t.timestamp).toLocaleTimeString();
+    html+=`${i+1}. <span style="color:${COLOR[t.type]}">${t.type.toUpperCase()}</span> ¥${t.y.toLocaleString()} (${ts})<br>`;
+    if(!open){open=t;}
+    else if(open.type!==t.type){
+      plSum += open.type==='buy' ? t.y-open.y : open.y-t.y;
+      open=null;
+    }else{open=t;}
+  });
+  box.innerHTML=html;
+  document.getElementById('plTotal').innerHTML=
+    `累計損益: <span style="color:${plSum>=0?'#27ae60':'#e74c3c'}">${plSum>=0?'+':''}${plSum.toLocaleString()}</span>`;
+}
+
+/* ===== 入力履歴（右下ログ） ===== */
+function updateRecent(){
+  const box=document.getElementById('recentPrices');
+  if(!priceData.length){box.innerHTML='<div style="text-align:center;color:#6c757d;padding:20px;">価格データがありません</div>';return;}
+  const recent=priceData.slice(-10).reverse();
+  box.innerHTML=recent.map((d,i)=>{
+    const diff=i<recent.length-1?d.price-recent[i+1].price:0,cls=diff>0?'price-up':diff<0?'price-down':'',sgn=diff>0?'+':'';
+    return `<div class="price-entry"><span class="${cls}">¥${d.price.toLocaleString()} ${diff!==0?`(${sgn}${diff})`:''}</span><span class="price-time">${new Date(d.timestamp).toLocaleTimeString()}</span></div>`;
+  }).join('');
+}
+
+/* ===== 管理用リスト（削除対応・イベント委任） ===== */
+function updatePriceList(){
+  const ul = document.getElementById('priceList');
+  if(!ul) return;
+  ul.innerHTML = '';
+  if(!priceData.length){
+    ul.innerHTML = '<li class="manage-item" style="justify-content:center;color:#6c757d;">履歴がありません</li>';
+    return;
+  }
+  priceData.forEach((d,i)=>{
+    const li=document.createElement('li'); li.className='manage-item';
+    li.innerHTML = `
+      <div class="item-meta">
+        <div>#${i+1} ¥${d.price.toLocaleString()}</div>
+        <small style="color:#7f8c8d;">${new Date(d.timestamp).toLocaleString()}</small>
+      </div>
+      <div class="item-actions">
+        <button type="button" class="btn btn-danger btn-small" data-idx="${i}">削除</button>
+      </div>
+    `;
+    ul.appendChild(li);
+  });
+}
+function updateTradeList(){
+  const ul = document.getElementById('tradeList');
+  if(!ul) return;
+  ul.innerHTML = '';
+  if(!trades.length){
+    ul.innerHTML = '<li class="manage-item" style="justify-content:center;color:#6c757d;">マークはありません</li>';
+    return;
+  }
+  trades.forEach((t,i)=>{
+    const active = (i===selectedTradeIdx) ? 'font-weight:700;text-decoration:underline;' : '';
+    const li=document.createElement('li'); li.className='manage-item';
+    li.innerHTML = `
+      <div class="item-meta" style="${active}">
+        <div>#${i+1} <span style="color:${COLOR[t.type]};font-weight:700">${t.type.toUpperCase()}</span> ¥${t.y.toLocaleString()}</div>
+        <small style="color:#7f8c8d;">${new Date(t.timestamp).toLocaleString()}</small>
+      </div>
+      <div class="item-actions">
+        <button type="button" class="btn btn-danger btn-small" data-tidx="${i}">削除</button>
+      </div>
+    `;
+    ul.appendChild(li);
+  });
+}
+
+/* イベント委任（クリックは親ULで拾う） */
+document.addEventListener('click', (e)=>{
+  // 入力履歴の削除
+  const priceBtn = e.target.closest('#priceList button[data-idx]');
+  if(priceBtn){
+    const idx = +priceBtn.dataset.idx;
+    const removed = priceData.splice(idx,1)[0];
+    log(`入力値削除: #${idx+1} ¥${removed.price.toLocaleString()}`);
+    drawChart();
+    rebindTradesToKagi();
+    drawChart();
+    updatePriceList();
+    updateTradeList();
+    maybeAutoSave();
+    return;
+  }
+  // トレード履歴の削除
+  const tradeBtn = e.target.closest('#tradeList button[data-tidx]');
+  if(tradeBtn){
+    const idx = +tradeBtn.dataset.tidx;
+    const r = trades.splice(idx,1)[0];
+    if(selectedTradeIdx===idx) selectedTradeIdx=null;
+    else if(selectedTradeIdx>idx) selectedTradeIdx--; // インデックス調整
+    log(`マーク削除: #${idx+1} ${r.type.toUpperCase()} ¥${r.y.toLocaleString()}`);
+    drawChart();
+    updateTradeList();
+    maybeAutoSave();
+    return;
+  }
+});
+
+/* ===== ログ & ステータス ===== */
+function log(msg,diff=null){
+  const log=document.getElementById('dataLog'),div=document.createElement('div');div.className='log-entry';
+  const cls=diff==null?'':diff>0?'price-up':diff<0?'price-down':'';
+  div.innerHTML=`<span class="timestamp">${new Date().toLocaleTimeString()}</span> - <span class="${cls}">${msg}</span>`;
+  log.appendChild(div);log.scrollTop=log.scrollHeight;if(log.children.length>50)log.children[0].remove();
+}
+function updateStats(){
+  document.getElementById('dataCount').textContent=priceData.length;
+  document.getElementById('kagiCount').textContent=kagiData.length;
+  if(priceData.length){
+    const l=priceData[priceData.length-1];
+    document.getElementById('currentPrice').textContent='¥'+l.price.toLocaleString();
+    document.getElementById('lastUpdate').textContent=new Date(l.timestamp).toLocaleTimeString();
+  }else{
+    document.getElementById('currentPrice').textContent='---';
+    document.getElementById('lastUpdate').textContent='未入力';
+  }
+}
+
+/* ===== 操作 ===== */
+function addPrice(){
+  const inp=document.getElementById('priceInput'),val=inp.value.trim();
+  if(!val) return alert('価格を入力してください');
+  const price=Math.round(parseFloat(val));if(isNaN(price)||price<=0) return alert('正しい価格を入力してください');
+  const ts=document.getElementById('datetimeInput').value?new Date(document.getElementById('datetimeInput').value).getTime():Date.now();
+  priceData.push({timestamp:ts,price});
+  const diff=priceData.length>1?price-priceData[priceData.length-2].price:0;log(`価格追加: ¥${price.toLocaleString()} (${diff>0?'+':''}${diff})`,diff);
+  selectedIdx=null;
+  drawChart();
+  rebindTradesToKagi();
+  drawChart();
+
+  document.getElementById('chartRange').value = 100;
+  updatePriceList();
+  updateTradeList();
+  maybeAutoSave();
+  inp.value='';
+}
+function markSelected(){
+  if(selectedIdx===null) return alert('まずチャート上のカギ足点をクリックしてください');
+  const type=document.getElementById('tradeType').value;
+  const p = kagiData[selectedIdx];
+  trades.push({x:p.x,y:p.y,type,timestamp:Date.now()});
+  selectedTradeIdx = trades.length-1; // 追加したものを選択状態に
+  log(`${type==='buy'?'買い':'売り'}マーク: ¥${p.y.toLocaleString()}`);
+  selectedIdx=null; drawChart();
+  updateTradeList();
+  maybeAutoSave();
+}
+function deleteSelectedTrade(){
+  if(selectedTradeIdx===null) return alert('削除するマークを選択してください（チャートのマークをクリック）');
+  const r = trades.splice(selectedTradeIdx,1)[0];
+  log(`選択マーク削除: ${r.type.toUpperCase()} ¥${r.y.toLocaleString()}`);
+  selectedTradeIdx=null;
+  drawChart();
+  updateTradeList();
+  maybeAutoSave();
+}
+function clearAll(){
+  if(!priceData.length && !trades.length) return alert('データがありません');
+  if(!confirm('全データ（入力・マーク）を削除しますか？')) return;
+  priceData=[];kagiData=[];trades=[];selectedIdx=null; selectedTradeIdx=null;
+  drawChart(); log('データをクリア');
+  updatePriceList(); updateTradeList();
+  maybeAutoSave();
+}
+function clearTrades(){
+  if(!trades.length) return alert('マークがありません');
+  if(!confirm('全ての売買マークを削除しますか？')) return;
+  trades=[]; selectedTradeIdx=null; drawChart(); log('全マークを削除');
+  updateTradeList(); maybeAutoSave();
+}
+function addSample(){
+  priceData=[];trades=[];selectedIdx=null; selectedTradeIdx=null;
+  const prices=[40000,40500,39500,40500,40000,41000,39000,42000,38000,43000,37000,44000,36000,45000,35000,
+                46000,34000,47000,33000,48000,32000,47500,33500,46000,35000,44500,36500,43000,38000,41500];
+  const base=Date.now()-prices.length*60000;
+  prices.forEach((p,i)=>priceData.push({timestamp:base+i*60000,price:p}));
+  log('長いサンプルデータ追加'); 
+  drawChart();
+  document.getElementById('chartRange').value = 100;
+  updatePriceList(); updateTradeList();
+  maybeAutoSave();
+}
+
+/* ===== CSVダウンロード（モバイル共有フォールバック） ===== */
+function downloadCSV(){
+  if(!priceData.length) return alert('データがありません');
+  const csv='timestamp,datetime,price\n'+priceData.map(d=>`${d.timestamp},${new Date(d.timestamp).toLocaleString()},${d.price}`).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const fname='nikkei225_'+new Date().toISOString().slice(0,10)+'.csv';
+  try{
+    const file=new File([blob], fname, {type:'text/csv'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file], title:'カギ足データ', text:'CSVデータ'});
+      log(`データ共有: ${priceData.length}件`);
+      return;
+    }
+  }catch(e){ /* iOS < 15 など File 未対応 */ }
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=fname; a.click(); URL.revokeObjectURL(url);
+  log(`データDL: ${priceData.length}件`);
+}
+
+/* ===== スクロール制御イベント ===== */
+function setupScrollControls(){
+  const rangeSlider = document.getElementById('chartRange');
+  const zoomOutBtn = document.getElementById('zoomOutBtn');
+  const zoomInBtn = document.getElementById('zoomInBtn');
+  const latestBtn = document.getElementById('latestBtn');
+
+  rangeSlider.addEventListener('input', function() {
+    updateViewRange();
+    chart.update('active');
+  });
+
+  zoomOutBtn.addEventListener('click', function() {
+    maxViewWidth = Math.min(maxViewWidth + 5, 50);
+    updateViewRange();
+    chart.update('active');
+    maybeAutoSave();
+  });
+
+  zoomInBtn.addEventListener('click', function() {
+    maxViewWidth = Math.max(maxViewWidth - 5, 5);
+    updateViewRange();
+    chart.update('active');
+    maybeAutoSave();
+  });
+
+  latestBtn.addEventListener('click', function() {
+    rangeSlider.value = 100;
+    updateViewRange();
+    chart.update('active');
+    maybeAutoSave();
+  });
+}
+
+/* ===== イベント登録 ===== */
+document.getElementById('addPriceBtn').onclick=addPrice;
+document.getElementById('priceInput').addEventListener('keypress',e=>{if(e.key==='Enter')addPrice();});
+document.getElementById('addTradeBtn').onclick=markSelected;
+document.getElementById('deleteSelectedTradeBtn').onclick=deleteSelectedTrade;
+document.getElementById('clearTradesBtn').onclick=clearTrades;
+document.getElementById('recalculateBtn').onclick=()=>{ if(priceData.length){ drawChart(); rebindTradesToKagi(); drawChart(); } };
+document.getElementById('reversalPercent').onchange=()=>{
+  if(priceData.length){ drawChart(); rebindTradesToKagi(); drawChart(); }
+  maybeAutoSave();
+};
+document.getElementById('sampleBtn').onclick=addSample;
+document.getElementById('clearBtn').onclick=clearAll;
+document.getElementById('downloadBtn').onclick=downloadCSV;
+document.getElementById('saveBtn').onclick    = () => saveState(true);
+document.getElementById('restoreBtn').onclick = restoreState;
+
+/* 離脱時の保険保存 */
+window.addEventListener('beforeunload', () => {
+  const auto = document.getElementById('autosaveToggle');
+  if(auto && auto.checked) saveState(false);
+});
+
+/* ===== PWA: Service Worker 登録 ===== */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(console.error);
+  });
+}
+
+/* ===== 初期化 ===== */
+window.onload=()=>{
+  initChart(); 
+  setupScrollControls();
+  log('手動入力システム初期化完了');
+  const now=new Date();now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
+  document.getElementById('datetimeInput').value=now.toISOString().slice(0,16);
+
+  if(localStorage.getItem(STORAGE_KEY)){
+    restoreState();
+  } else {
+    log('保存データは見つかりませんでした');
+  }
+  updatePriceList();
+  updateTradeList();
+};
+</script>
+</body>
+</html>
