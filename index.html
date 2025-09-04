@@ -558,7 +558,11 @@ window.onload=()=>{ initChart(); setupScrollControls(); log('手動入力シス�
 
 <!-- ===== Firebase（クラウド同期） ===== -->
 <script type="module">
-/* ここを Firebase の SDK 設定で置き換え（Webアプリの構成） */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+/* ←あなたの設定で置換。空のままでもUIが動くように下で判定します。*/
 const firebaseConfig = {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_AUTH_DOMAIN",
@@ -568,78 +572,98 @@ const firebaseConfig = {
   appId: "YOUR_APP_ID"
 };
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+const USE_FIREBASE =
+  firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("YOUR_") &&
+  firebaseConfig.projectId && !firebaseConfig.projectId.includes("YOUR_");
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-await signInAnonymously(auth).catch(console.error);
-const db = getFirestore(app);
-enableIndexedDbPersistence(db).catch(()=>{});
+(function attachErrorLoggers(){
+  // 何か起きたら画面下のログに出す
+  window.addEventListener("error", (e) => {
+    const m = e?.error?.message || e.message || "Script error";
+    window.log?.(`⚠️ エラー: ${m}`);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    const m = e?.reason?.message || String(e.reason);
+    window.log?.(`⚠️ Promiseエラー: ${m}`);
+  });
+})();
 
-let cloudDocRef=null, unsub=null, isApplyingRemote=false, lastPushedAt=0;
+(async function initFirebaseSafe(){
+  if (!USE_FIREBASE) {
+    // 未設定でもアプリ本体は動く
+    const s = document.getElementById("cloudStatus");
+    if (s) s.textContent = "未接続（Firebase未設定）";
+    return;
+  }
+  try {
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    await signInAnonymously(auth);
+    const db = getFirestore(app);
+    try { await enableIndexedDbPersistence(db); } catch(_) {}
 
-window.connectCloud = async function(key){
-  try{
-    if(unsub){unsub();unsub=null;}
-    cloudDocRef = doc(db,'kagi_states',key);
-    const snap = await getDoc(cloudDocRef);
-    if(!snap.exists()){
-      await setDoc(cloudDocRef,{ state: window.getStateObject(), updatedAt: Date.now() });
-    }else{
-      isApplyingRemote=true; window.applyStateObject(snap.data().state); isApplyingRemote=false;
-    }
-    unsub = onSnapshot(cloudDocRef,(docSnap)=>{
-      const d=docSnap.data(); if(!d) return;
-      if(d.updatedAt && d.updatedAt <= lastPushedAt) return;
-      isApplyingRemote=true; window.applyStateObject(d.state); isApplyingRemote=false;
-      const s=document.getElementById('cloudStatus'); if(s) s.textContent='同期（受信）';
-      setTimeout(()=>{const s2=document.getElementById('cloudStatus'); if(s2) s2.textContent='接続中';},700);
+    let cloudDocRef = null, unsub = null, isApplyingRemote = false, lastPushedAt = 0;
+
+    window.connectCloud = async function(key){
+      try{
+        if(unsub){unsub();unsub=null;}
+        cloudDocRef = doc(db,'kagi_states',key);
+        const snap = await getDoc(cloudDocRef);
+        if(!snap.exists()){
+          await setDoc(cloudDocRef,{ state: window.getStateObject(), updatedAt: Date.now() });
+        }else{
+          isApplyingRemote=true; window.applyStateObject(snap.data().state); isApplyingRemote=false;
+        }
+        unsub = onSnapshot(cloudDocRef,(docSnap)=>{
+          const d=docSnap.data(); if(!d) return;
+          if(d.updatedAt && d.updatedAt <= lastPushedAt) return;
+          isApplyingRemote=true; window.applyStateObject(d.state); isApplyingRemote=false;
+          const s=document.getElementById('cloudStatus'); if(s) s.textContent='同期（受信）';
+          setTimeout(()=>{const s2=document.getElementById('cloudStatus'); if(s2) s2.textContent='接続中';},700);
+        });
+        const s=document.getElementById('cloudStatus'); if(s) s.textContent='接続中';
+        localStorage.setItem('kagi_share_key', key);
+        window.log?.('クラウドに接続しました');
+      }catch(e){ window.log?.('⚠️ クラウド接続に失敗: '+(e?.message||e)); }
+    };
+
+    window.pushCloud = async function(){
+      if(!cloudDocRef || isApplyingRemote) return;
+      lastPushedAt=Date.now();
+      try{
+        await setDoc(cloudDocRef,{ state: window.getStateObject(), updatedAt:lastPushedAt },{merge:true});
+        const s=document.getElementById('cloudStatus'); if(s) s.textContent='同期（送信）';
+        setTimeout(()=>{const s2=document.getElementById('cloudStatus'); if(s2) s2.textContent='接続中';},700);
+      }catch(e){ /* オフライン時は無視 */ }
+    };
+
+    // 起動時の自動接続
+    (function autoConnect(){
+      const params=new URLSearchParams(location.search);
+      const urlKey=params.get('key'); const saved=localStorage.getItem('kagi_share_key');
+      const key=urlKey||saved;
+      if(key){ document.getElementById('shareKey').value=key; window.connectCloud(key);
+        if(urlKey){ params.delete('key'); history.replaceState(null,'',location.pathname+(params.toString()?('?'+params.toString()):'')); }
+      }
+    })();
+
+    // 共有リンク
+    document.getElementById('copyLinkBtn')?.addEventListener('click',async()=>{
+      const k=document.getElementById('shareKey').value.trim(); if(!k) return alert('先にキーを入力/生成してください');
+      const url=location.origin+location.pathname+'?key='+encodeURIComponent(k);
+      try{ await navigator.clipboard.writeText(url); alert('URLをコピーしました:\n'+url); }catch(e){ prompt('このURLをコピーしてください',url); }
     });
-    const s=document.getElementById('cloudStatus'); if(s) s.textContent='接続中';
-    localStorage.setItem('kagi_share_key', key);
-    window.log('クラウドに接続しました');
-  }catch(e){ console.error(e); alert('クラウド接続に失敗しました（設定を確認）'); }
-};
+    document.getElementById('connectCloudBtn')?.addEventListener('click', async ()=>{
+      const el=document.getElementById('shareKey'); let key=(el.value||'').trim(); if(!key){ key=crypto.getRandomValues(new Uint8Array(12)).reduce((a,b)=>a+b.toString(16).padStart(2,'0'),''); el.value=key; }
+      await window.connectCloud(key);
+    });
+    document.getElementById('newKeyBtn')?.addEventListener('click',()=>{
+      const a=crypto.getRandomValues(new Uint8Array(12)); const k=[...a].map(b=>b.toString(16).padStart(2,'0')).join('');
+      document.getElementById('shareKey').value=k; localStorage.setItem('kagi_share_key',k); window.log?.('新しい共有キーを生成しました');
+    });
 
-window.pushCloud = async function(){
-  if(!cloudDocRef || isApplyingRemote) return;
-  lastPushedAt=Date.now();
-  try{
-    await setDoc(cloudDocRef,{ state: window.getStateObject(), updatedAt:lastPushedAt },{merge:true});
-    const s=document.getElementById('cloudStatus'); if(s) s.textContent='同期（送信）';
-    setTimeout(()=>{const s2=document.getElementById('cloudStatus'); if(s2) s2.textContent='接続中';},700);
-  }catch(e){ /* オフライン時は無視 */ }
-};
-
-window.generateKey = function(){
-  const a = crypto.getRandomValues(new Uint8Array(12));
-  return [...a].map(b=>b.toString(16).padStart(2,'0')).join('');
-};
-
-/* ボタン類 */
-document.getElementById('connectCloudBtn').addEventListener('click', async ()=>{
-  const el=document.getElementById('shareKey'); let key=(el.value||'').trim();
-  if(!key){ key=window.generateKey(); el.value=key; }
-  await window.connectCloud(key);
-});
-document.getElementById('newKeyBtn').addEventListener('click',()=>{
-  const k=window.generateKey(); document.getElementById('shareKey').value=k; localStorage.setItem('kagi_share_key',k); window.log('新しい共有キーを生成しました');
-});
-document.getElementById('copyLinkBtn').addEventListener('click',async()=>{
-  const k=document.getElementById('shareKey').value.trim(); if(!k) return alert('先にキーを入力/生成してください');
-  const url=location.origin+location.pathname+'?key='+encodeURIComponent(k);
-  try{ await navigator.clipboard.writeText(url); alert('URLをコピーしました:\n'+url); }catch(e){ prompt('このURLをコピーしてください',url); }
-});
-
-/* 起動時の自動接続 (?key= or localStorage) */
-(function autoConnect(){
-  const params=new URLSearchParams(location.search);
-  const urlKey=params.get('key'); const saved=localStorage.getItem('kagi_share_key');
-  const key=urlKey||saved;
-  if(key){ document.getElementById('shareKey').value=key; window.connectCloud(key);
-    if(urlKey){ params.delete('key'); history.replaceState(null,'',location.pathname+(params.toString()?('?'+params.toString()):'')); }
+  } catch (e) {
+    window.log?.('⚠️ Firebase初期化エラー: '+(e?.message||e));
   }
 })();
 </script>
