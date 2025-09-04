@@ -1,4 +1,4 @@
-const CACHE = "kagi-v4";
+const CACHE = "kagi-v5"; // ←更新時は名前を上げる
 const ASSETS = [
   "./",
   "index.html",
