@@ -1,5 +1,5 @@
 {
-  "name": "日経225先物 手動入力カギ足（クラウド同期版）",
+  "name": "日経225先物 手動入力カギ足（クラウド同期＋CSV）",
   "short_name": "KagiSync",
   "start_url": ".",
   "display": "standalone",
