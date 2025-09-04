@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>日経225先物 手動入力カギ足（クラウド同期＋CSV対応）</title>
+<title>日経225先物 手動入力カギ足（緊急復旧版）</title>
 
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
@@ -79,7 +79,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
 <body>
 <div class="container">
   <div class="header">
-    <h1>📈 日経225先物 手動入力カギ足 <small style="font-size:.6em;opacity:.8">クラウド同期＋CSV対応</small></h1>
+    <h1>📈 日経225先物 手動入力カギ足 <small style="font-size:.6em;opacity:.8">緊急復旧版</small></h1>
     <div class="status-indicator"><div class="status-dot"></div><span>手動入力モード</span></div>
   </div>
 
@@ -110,21 +110,6 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
           <input type="number" class="form-control" id="reversalPercent" value="0.1" step="0.01" min="0.01" max="10">
         </div>
         <button type="button" class="btn btn-warning btn-small" id="recalculateBtn">🔄 再計算</button>
-      </div>
-
-      <!-- クラウド同期 -->
-      <div class="control-group">
-        <h3>☁️ クラウド同期（Firestore）</h3>
-        <div class="input-group">
-          <label>共有キー（同じキーで複数端末が同期）</label>
-          <input id="shareKey" class="form-control" placeholder="例: 自動生成を押す">
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button type="button" class="btn btn-primary btn-small" id="connectCloudBtn">接続</button>
-          <button type="button" class="btn btn-secondary btn-small" id="newKeyBtn">🆕 自動生成</button>
-          <button type="button" class="btn btn-warning btn-small" id="copyLinkBtn">🔗 共有リンク</button>
-        </div>
-        <div id="cloudStatus" style="font-size:0.9em;color:#7f8c8d;margin-top:6px;">未接続</div>
       </div>
 
       <!-- 売買記録 -->
@@ -173,7 +158,6 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
           <button type="button" class="btn btn-secondary btn-small" id="exportJsonBtn">🧾 JSONエクスポート</button>
           <button type="button" class="btn btn-primary btn-small" id="importJsonBtn">📥 JSONインポート</button>
           <input type="file" id="importFile" accept="application/json" style="display:none">
-          <!-- CSVインポート UI -->
           <button type="button" class="btn btn-primary btn-small" id="importCsvBtn">📥 CSVインポート</button>
           <input type="file" id="importCsvFile" accept=".csv,text/csv" style="display:none">
         </div>
@@ -200,7 +184,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
       </div>
 
       <div class="alert alert-info"><strong>📌 使用方法:</strong><br>• 転換率 0.1% は約 40 円幅<br>• サンプルデータで動作確認できます</div>
-      <div class="alert alert-warning"><strong>⚡ 注意:</strong><br>ローカル保存は端末ごと。クラウド同期で端末間共有できます。</div>
+      <div class="alert alert-warning"><strong>⚡ 注意:</strong><br>ローカル保存は端末ごと。クラウド同期は復旧後に再設定。</div>
     </div>
 
     <!-- 右パネル -->
@@ -222,7 +206,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
 </div>
 
 <script>
-/* ===== 共通変数 ===== */
+/* ===== ここからアプリ本体（Firebase依存なし） ===== */
 let chart=null, priceData=[], kagiData=[], trades=[];
 let selectedIdx=null, selectedTradeIdx=null;
 let viewStart=0, viewEnd=0, maxViewWidth=20;
@@ -230,7 +214,6 @@ const COLOR={buy:'#2ecc71', sell:'#e74c3c', pair:'#7f8c8d55'};
 const SHAPE={buy:'triangle', sell:'rectRot'};
 const STORAGE_KEY='kagi_manual_storage_v1';
 
-/* ===== 状態のシリアライズ ===== */
 function getStateObject(){ return { priceData, trades, reversalPercent:+document.getElementById('reversalPercent').value, maxViewWidth }; }
 function applyStateObject(s){
   if(!s) return;
@@ -241,19 +224,10 @@ function applyStateObject(s){
   selectedIdx=null; selectedTradeIdx=null;
   drawChart(); updatePriceList(); updateTradeList(); maybeAutoSave();
 }
+function saveState(manual=false){ try{ const state={savedAt:Date.now(), ...getStateObject()}; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); if(manual) log('ローカル保存を実行しました'); }catch(e){ alert('保存に失敗しました'); } }
+function restoreState(){ try{ const raw=localStorage.getItem(STORAGE_KEY); if(!raw){ alert('保存データがありません'); return; } applyStateObject(JSON.parse(raw)); log('保存データを復元しました'); }catch(e){ alert('復元に失敗しました'); } }
+function maybeAutoSave(){ const auto=document.getElementById('autosaveToggle'); if(auto && auto.checked) saveState(false); }
 
-/* ===== 保存・復元（ローカル） ===== */
-function saveState(manual=false){
-  try{ const state={savedAt:Date.now(), ...getStateObject()}; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); if(manual) log('ローカル保存を実行しました'); }
-  catch(e){ console.error(e); alert('保存に失敗しました'); }
-}
-function restoreState(){
-  try{ const raw=localStorage.getItem(STORAGE_KEY); if(!raw){ alert('保存データがありません'); return; } applyStateObject(JSON.parse(raw)); log('保存データを復元しました'); }
-  catch(e){ console.error(e); alert('復元に失敗しました'); }
-}
-function maybeAutoSave(){ const auto=document.getElementById('autosaveToggle'); if(auto && auto.checked) saveState(false); if(window.pushCloud) window.pushCloud(); }
-
-/* ===== カギ足計算 ===== */
 function calcKagi(list,rev){
   if(!list.length) return [];
   const k=[],f=list[0];let last=f.price,trend=1;
@@ -277,7 +251,6 @@ function toPath(d){
   return r;
 }
 
-/* ===== Chart 初期化 ===== */
 function initChart(){
   const ctx=document.getElementById('kagiChart').getContext('2d');
   chart=new Chart(ctx,{type:'line',data:{datasets:[
@@ -291,7 +264,6 @@ function initChart(){
   chart.canvas.addEventListener('click', onChartClick);
 }
 
-/* ===== 表示範囲 ===== */
 function updateViewRange(){
   if(!kagiData.length) return;
   const totalWidth = kagiData.length>0 ? Math.max(...kagiData.map(p=>p.x))+1 : 1;
@@ -307,14 +279,12 @@ function updateViewRange(){
   rangeSlider.max=100;
 }
 
-/* ===== ペア線 ===== */
 function updatePairLines(){
   const seg=[];let open=null;
   trades.forEach(t=>{ if(!open){open=t;return;} if(open.type!==t.type){ seg.push({x:open.x,y:open.y},{x:t.x,y:t.y},{x:NaN,y:NaN}); open=null; } else { open=t; }});
   chart.data.datasets[2].data=seg;
 }
 
-/* ===== 再割当 ===== */
 function rebindTradesToKagi(){
   if(!kagiData.length || !trades.length) return;
   let changes=0;
@@ -330,7 +300,6 @@ function rebindTradesToKagi(){
   if(changes>0) log(`トレード位置を再割当: ${changes}件`);
 }
 
-/* ===== 描画 ===== */
 function drawChart(){
   kagiData=toPath( calcKagi(priceData,+document.getElementById('reversalPercent').value) );
   chart.data.datasets[0].data=kagiData.map(p=>({x:p.x,y:p.y}));
@@ -345,7 +314,6 @@ function drawChart(){
   updateTradeLog(); updateStats(); updateRecent();
 }
 
-/* ===== 選択表示/クリック ===== */
 function highlightSelected(updateChart=true){
   const ds=chart.data.datasets[3];
   ds.data = selectedIdx!==null ? [{x:kagiData[selectedIdx].x,y:kagiData[selectedIdx].y}] : [];
@@ -359,7 +327,6 @@ function onChartClick(evt){
   else if(el.datasetIndex===1){ selectedTradeIdx=el.index; drawChart(); }
 }
 
-/* ===== 履歴/損益 ===== */
 function updateTradeLog(){
   const box=document.getElementById('tradeLog');
   if(!trades.length){ box.innerHTML='—'; document.getElementById('plTotal').textContent=''; return; }
@@ -396,7 +363,6 @@ function updateTradeList(){
     ul.appendChild(li); });
 }
 
-/* 削除の委任 */
 document.addEventListener('click',(e)=>{
   const pb=e.target.closest('#priceList button[data-idx]'); if(pb){ const idx=+pb.dataset.idx; const r=priceData.splice(idx,1)[0];
     log(`入力値削除: #${idx+1} ¥${r.price.toLocaleString()}`); drawChart(); rebindTradesToKagi(); drawChart(); updatePriceList(); updateTradeList(); maybeAutoSave(); return; }
@@ -405,7 +371,6 @@ document.addEventListener('click',(e)=>{
     log(`マーク削除: #${idx+1} ${r.type.toUpperCase()} ¥${r.y.toLocaleString()}`); drawChart(); updateTradeList(); maybeAutoSave(); return; }
 });
 
-/* ログ/統計 */
 function log(msg,diff=null){
   const logEl=document.getElementById('dataLog'),div=document.createElement('div');div.className='log-entry';
   const cls=diff==null?'':diff>0?'price-up':diff<0?'price-down':'';
@@ -421,7 +386,6 @@ function updateStats(){
   }else{ document.getElementById('currentPrice').textContent='---'; document.getElementById('lastUpdate').textContent='未入力'; }
 }
 
-/* 操作 */
 function addPrice(){
   const inp=document.getElementById('priceInput'),val=inp.value.trim();
   if(!val) return alert('価格を入力してください');
@@ -523,7 +487,7 @@ function setupScrollControls(){
   latestBtn.addEventListener('click',()=>{rangeSlider.value=100;updateViewRange();chart.update('active');maybeAutoSave();});
 }
 
-/* イベント登録 */
+/* ボタン紐付け */
 document.getElementById('addPriceBtn').onclick=addPrice;
 document.getElementById('priceInput').addEventListener('keypress',e=>{if(e.key==='Enter')addPrice();});
 document.getElementById('addTradeBtn').onclick=markSelected;
@@ -542,131 +506,14 @@ document.getElementById('importFile').addEventListener('change',e=>{const f=e.ta
 document.getElementById('importCsvBtn').addEventListener('click',()=>document.getElementById('importCsvFile').click());
 document.getElementById('importCsvFile').addEventListener('change',e=>{const f=e.target.files?.[0]; if(f) importCSVFile(f);});
 
-/* 割り込み保存 */
-window.addEventListener('beforeunload',()=>{ const auto=document.getElementById('autosaveToggle'); if(auto && auto.checked) saveState(false); });
-
-/* PWA: SW登録 */
+/* SW登録 */
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('./sw.js').catch(console.error); }); }
 
 /* 初期化 */
 window.onload=()=>{ initChart(); setupScrollControls(); log('手動入力システム初期化完了');
   const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset()); document.getElementById('datetimeInput').value=now.toISOString().slice(0,16);
-  if(localStorage.getItem(STORAGE_KEY)){ restoreState(); } else { log('保存データは見つかりませんでした'); }
   updatePriceList(); updateTradeList();
 };
 </script>
-
-<!-- ===== Firebase（クラウド同期） ===== -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-/* ←あなたの設定で置換。空のままでもUIが動くように下で判定します。*/
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-
-const USE_FIREBASE =
-  firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("YOUR_") &&
-  firebaseConfig.projectId && !firebaseConfig.projectId.includes("YOUR_");
-
-(function attachErrorLoggers(){
-  // 何か起きたら画面下のログに出す
-  window.addEventListener("error", (e) => {
-    const m = e?.error?.message || e.message || "Script error";
-    window.log?.(`⚠️ エラー: ${m}`);
-  });
-  window.addEventListener("unhandledrejection", (e) => {
-    const m = e?.reason?.message || String(e.reason);
-    window.log?.(`⚠️ Promiseエラー: ${m}`);
-  });
-})();
-
-(async function initFirebaseSafe(){
-  if (!USE_FIREBASE) {
-    // 未設定でもアプリ本体は動く
-    const s = document.getElementById("cloudStatus");
-    if (s) s.textContent = "未接続（Firebase未設定）";
-    return;
-  }
-  try {
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    await signInAnonymously(auth);
-    const db = getFirestore(app);
-    try { await enableIndexedDbPersistence(db); } catch(_) {}
-
-    let cloudDocRef = null, unsub = null, isApplyingRemote = false, lastPushedAt = 0;
-
-    window.connectCloud = async function(key){
-      try{
-        if(unsub){unsub();unsub=null;}
-        cloudDocRef = doc(db,'kagi_states',key);
-        const snap = await getDoc(cloudDocRef);
-        if(!snap.exists()){
-          await setDoc(cloudDocRef,{ state: window.getStateObject(), updatedAt: Date.now() });
-        }else{
-          isApplyingRemote=true; window.applyStateObject(snap.data().state); isApplyingRemote=false;
-        }
-        unsub = onSnapshot(cloudDocRef,(docSnap)=>{
-          const d=docSnap.data(); if(!d) return;
-          if(d.updatedAt && d.updatedAt <= lastPushedAt) return;
-          isApplyingRemote=true; window.applyStateObject(d.state); isApplyingRemote=false;
-          const s=document.getElementById('cloudStatus'); if(s) s.textContent='同期（受信）';
-          setTimeout(()=>{const s2=document.getElementById('cloudStatus'); if(s2) s2.textContent='接続中';},700);
-        });
-        const s=document.getElementById('cloudStatus'); if(s) s.textContent='接続中';
-        localStorage.setItem('kagi_share_key', key);
-        window.log?.('クラウドに接続しました');
-      }catch(e){ window.log?.('⚠️ クラウド接続に失敗: '+(e?.message||e)); }
-    };
-
-    window.pushCloud = async function(){
-      if(!cloudDocRef || isApplyingRemote) return;
-      lastPushedAt=Date.now();
-      try{
-        await setDoc(cloudDocRef,{ state: window.getStateObject(), updatedAt:lastPushedAt },{merge:true});
-        const s=document.getElementById('cloudStatus'); if(s) s.textContent='同期（送信）';
-        setTimeout(()=>{const s2=document.getElementById('cloudStatus'); if(s2) s2.textContent='接続中';},700);
-      }catch(e){ /* オフライン時は無視 */ }
-    };
-
-    // 起動時の自動接続
-    (function autoConnect(){
-      const params=new URLSearchParams(location.search);
-      const urlKey=params.get('key'); const saved=localStorage.getItem('kagi_share_key');
-      const key=urlKey||saved;
-      if(key){ document.getElementById('shareKey').value=key; window.connectCloud(key);
-        if(urlKey){ params.delete('key'); history.replaceState(null,'',location.pathname+(params.toString()?('?'+params.toString()):'')); }
-      }
-    })();
-
-    // 共有リンク
-    document.getElementById('copyLinkBtn')?.addEventListener('click',async()=>{
-      const k=document.getElementById('shareKey').value.trim(); if(!k) return alert('先にキーを入力/生成してください');
-      const url=location.origin+location.pathname+'?key='+encodeURIComponent(k);
-      try{ await navigator.clipboard.writeText(url); alert('URLをコピーしました:\n'+url); }catch(e){ prompt('このURLをコピーしてください',url); }
-    });
-    document.getElementById('connectCloudBtn')?.addEventListener('click', async ()=>{
-      const el=document.getElementById('shareKey'); let key=(el.value||'').trim(); if(!key){ key=crypto.getRandomValues(new Uint8Array(12)).reduce((a,b)=>a+b.toString(16).padStart(2,'0'),''); el.value=key; }
-      await window.connectCloud(key);
-    });
-    document.getElementById('newKeyBtn')?.addEventListener('click',()=>{
-      const a=crypto.getRandomValues(new Uint8Array(12)); const k=[...a].map(b=>b.toString(16).padStart(2,'0')).join('');
-      document.getElementById('shareKey').value=k; localStorage.setItem('kagi_share_key',k); window.log?.('新しい共有キーを生成しました');
-    });
-
-  } catch (e) {
-    window.log?.('⚠️ Firebase初期化エラー: '+(e?.message||e));
-  }
-})();
-</script>
-
 </body>
 </html>
