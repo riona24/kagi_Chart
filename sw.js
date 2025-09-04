@@ -1,5 +1,5 @@
 // sw.js
-const CACHE = "kagi-v9"; // ←更新のたびに上げる
+const CACHE = "kagi-v11"; // ←更新のたびに上げる
 const ASSETS = [
   "./",
   "index.html",
