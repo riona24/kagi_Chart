@@ -1,5 +1,5 @@
 // sw.js
-const CACHE = "kagi-v7"; // ←名前を必ず上げる
+const CACHE = "kagi-v9"; // ←更新のたびに上げる
 const ASSETS = [
   "./",
   "index.html",
@@ -23,21 +23,15 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   e.respondWith(
-    caches.match(req).then((res) => {
-      return (
-        res ||
-        fetch(req).then((net) => {
-          if (
-            req.method === "GET" &&
-            (req.url.startsWith(self.location.origin) ||
-              req.url.startsWith("https://cdnjs.cloudflare.com"))
-          ) {
-            const copy = net.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          }
-          return net;
-        }).catch(() => caches.match("index.html"))
-      );
-    })
+    caches.match(req).then((res) =>
+      res ||
+      fetch(req).then((net) => {
+        if (req.method === "GET" && (req.url.startsWith(self.location.origin) || req.url.startsWith("https://cdnjs.cloudflare.com"))) {
+          const copy = net.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(()=>{});
+        }
+        return net;
+      }).catch(() => caches.match("index.html"))
+    )
   );
 });
